@@ -1,7 +1,8 @@
 # void Image Viewer
-A lightweight image viewer for Windows with animated GIF/WEBP support.  
-Opens and displays BMP, GIF, ICO, PNG, JPG, TIF and WEBP images as fast as possible.  
+A lightweight image viewer for Windows with animated GIF/WEBP and PSD support.  
+Opens and displays BMP, GIF, ICO, PNG, JPG, TIF, WEBP and PSD images as fast as possible.  
 Animate GIF/WEBP files as accurately as possible.  
+PSD files are shown as flattened composite images.  
 
 [Download](#download)<br/>
 [See also](#See-also)<br/>
