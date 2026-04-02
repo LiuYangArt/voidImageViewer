@@ -1,0 +1,25 @@
+# Visual Studio local state
+.vs/
+**/.vs/
+*.user
+
+# Build outputs
+[Dd]ebug/
+[Rr]elease/
+x64/
+**/x64/
+vs2026/voidImageViewer/
+
+# Local packaging artifacts
+_dev/artifacts/
+_dev/artifacts-test/
+
+# VS upgrade leftovers for legacy workspace
+vs2005/Backup/
+vs2005/UpgradeLog.htm
+vs2005/*.vcxproj
+vs2005/*.vcxproj.filters
+
+# Local planning notes
+notes.md
+task_plan.md
