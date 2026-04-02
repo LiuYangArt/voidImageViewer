@@ -294,5 +294,6 @@ static const utf8_t *_localization_string_array_zh_cn[LOCALIZATION_ID_COUNT] =
 	"PNG Image",
 	"TIFF Image",
 	"TIFF Image",
+	"PSD Image",
 	"WebP Image",
 };

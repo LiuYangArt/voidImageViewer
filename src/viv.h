@@ -233,6 +233,7 @@ enum
 #include "utf8.h"
 #include "ini.h"
 #include "config.h"
+#include "psd.h"
 #include "webp.h"
 #include "small_pool.h"
 #include "safe_size.h"

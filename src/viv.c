@@ -247,7 +247,8 @@
 #define _VIV_ASSOCIATION_PNG				0x00000020
 #define _VIV_ASSOCIATION_TIF				0x00000040
 #define _VIV_ASSOCIATION_TIFF				0x00000080
-#define _VIV_ASSOCIATION_WEBP				0x00000100
+#define _VIV_ASSOCIATION_PSD				0x00000100
+#define _VIV_ASSOCIATION_WEBP				0x00000200
 
 #define _VIV_ZOOM_MAX 16
 
@@ -610,6 +611,7 @@ static void _viv_start_first_frame(void);
 static void _viv_activate_preload(void);
 static int _viv_webp_info_proc(_viv_webp_t *viv_webp,DWORD frame_count,DWORD wide,DWORD high,int has_alpha);
 static int _viv_webp_frame_proc(_viv_webp_t *viv_webp,BYTE *pixels,int delay);
+static int _viv_special_load_complete(int load_ok,const _viv_webp_t *viv_webp);
 static void _viv_clear_frames(_viv_frame_t *frames,int loaded_count);
 static void viv_copy_current_image_to_last_image(void);
 static void _viv_activate_last(void);
@@ -1124,6 +1126,7 @@ const char *_viv_association_extensions[] =
 	"png",
 	"tif",
 	"tiff",
+	"psd",
 	"webp",
 };
 
@@ -1138,6 +1141,7 @@ const localization_id_t _viv_association_description_localization_id_array[] =
 	LOCALIZATION_ID_ASSOCIATION_DESCRIPTION_PNG,
 	LOCALIZATION_ID_ASSOCIATION_DESCRIPTION_TIF,
 	LOCALIZATION_ID_ASSOCIATION_DESCRIPTION_TIFF,
+	LOCALIZATION_ID_ASSOCIATION_DESCRIPTION_PSD,
 	LOCALIZATION_ID_ASSOCIATION_DESCRIPTION_WEBP,
 };
 
@@ -1146,6 +1150,7 @@ const char *_viv_association_icon_locations[] =
 	NULL,
 	NULL,
 	"%1",
+	NULL,
 	NULL,
 	NULL,
 	NULL,
@@ -1164,6 +1169,7 @@ const WORD _viv_association_dlg_item_id[] =
 	IDC_PNG,
 	IDC_TIF,
 	IDC_TIFF,
+	IDC_PSD,
 	IDC_WEBP,
 };
 
@@ -2345,7 +2351,7 @@ debug_printf("SWP %d %d %d %d\n",rect.left,rect.top,rect.right - rect.left,rect.
 
 				string_copy(tobuf,_viv_last_open_file ? _viv_last_open_file : L"");
 				
-				string_printf(filter_wbuf,"%s (*.bmp;*.gif;*.ico;*.jpeg;*.jpg;*.png;*.tif;*.tiff;*.webp)%c*.bmp;*.gif;*.ico;*.jpeg;*.jpg;*.png;*.tif;*.tiff;*.webp%c%s (*.*)%c*.*%c",localization_get_string(LOCALIZATION_ID_OPEN_ALL_IMAGE_FILES),0,0,localization_get_string(LOCALIZATION_ID_OPEN_ALL_FILES),0,0);
+				string_printf(filter_wbuf,"%s (*.bmp;*.gif;*.ico;*.jpeg;*.jpg;*.png;*.tif;*.tiff;*.psd;*.webp)%c*.bmp;*.gif;*.ico;*.jpeg;*.jpg;*.png;*.tif;*.tiff;*.psd;*.webp%c%s (*.*)%c*.*%c",localization_get_string(LOCALIZATION_ID_OPEN_ALL_IMAGE_FILES),0,0,localization_get_string(LOCALIZATION_ID_OPEN_ALL_FILES),0,0);
 
 				string_copy_utf8_string(title_wbuf,localization_get_string(LOCALIZATION_ID_OPEN_IMAGE_CAPTION));
 				
@@ -7938,6 +7944,7 @@ static INT_PTR CALLBACK _viv_options_general_proc(HWND hwnd,UINT msg,WPARAM wPar
 					CheckDlgButton(hwnd,IDC_PNG,check);
 					CheckDlgButton(hwnd,IDC_TIF,check);
 					CheckDlgButton(hwnd,IDC_TIFF,check);
+					CheckDlgButton(hwnd,IDC_PSD,check);
 					CheckDlgButton(hwnd,IDC_WEBP,check);
 					
 					break;
@@ -10269,6 +10276,11 @@ static int _viv_webp_frame_proc(_viv_webp_t *viv_webp,BYTE *pixels,int delay)
 	return 1;
 }
 
+static int _viv_special_load_complete(int load_ok,const _viv_webp_t *viv_webp)
+{
+	return load_ok || (viv_webp->frame_index > 0);
+}
+
 // 14.447 - CreateStreamOnHGlobal - this is too slow over slow networks -which doesn't matter because the gif wont show the first frame until the entire gif is loaded anyway.
 // 14.520 - CreateStreamOnHGlobal
 // 15.834 - SHCreateStreamOnFile
@@ -10711,18 +10723,21 @@ static DWORD WINAPI _viv_load_image_thread_proc(void *param)
 				viv_webp.last_delay = 0;
 				viv_webp.orientation = orientation;
 				
-				if (webp_load(stream,&viv_webp,_viv_webp_info_proc,_viv_webp_frame_proc))
+				if (_viv_special_load_complete(psd_load(stream,&viv_webp,_viv_webp_info_proc,_viv_webp_frame_proc),&viv_webp))
 				{
 					ret = 1;
 				}
 				else
 				{
-					debug_printf("libwebp failed to load image %S\n",_viv_load_image_filename);
-
-					// we loaded at least one frame, so treat it as complete.
-					if (viv_webp.frame_index > 0)
+					debug_printf("psd failed to load image %S\n",_viv_load_image_filename);
+					
+					if (_viv_special_load_complete(webp_load(stream,&viv_webp,_viv_webp_info_proc,_viv_webp_frame_proc),&viv_webp))
 					{
 						ret = 1;
+					}
+					else
+					{
+						debug_printf("libwebp failed to load image %S\n",_viv_load_image_filename);
 					}
 				}
 
@@ -11802,9 +11817,9 @@ static void _viv_command_line_options(void)
 //		"/everything <search> Open files from an Everything search.\n"
 //		"/random <search>\tOpen random files from an Everything search.\n"
 		"/shuffle\t\tShuffle playlist.\n"
-		"/<bmp|gif|ico|jpeg|jpg|png|tif|tiff|webp>\n"
+		"/<bmp|gif|ico|jpeg|jpg|png|tif|tiff|psd|webp>\n"
 		"\t\tInstall association.\n"
-		"/no<bmp|gif|ico|jpeg|jpg|png|tif|tiff|webp>\n"
+		"/no<bmp|gif|ico|jpeg|jpg|png|tif|tiff|psd|webp>\n"
 		"\t\tUninstall association.\n"
 		"/appdata\t\tSave settings in appdata.\n"
 		"/noappdata\tSave settings in exe path.\n"
@@ -13342,7 +13357,7 @@ static int _viv_send_everything_search(HWND hwnd,int add,int randomize,const wch
 			DWORD size;
 			wchar_t new_search[STRING_SIZE];
 			
-			string_copy_utf8_string(new_search,"ext:bmp;gif;ico;jpeg;jpg;png;tif;tiff;webp <");
+			string_copy_utf8_string(new_search,"ext:bmp;gif;ico;jpeg;jpg;png;tif;tiff;psd;webp <");
 			string_cat(new_search,search);
 			string_cat_utf8(new_search,">");
 
@@ -13805,7 +13820,7 @@ static void _viv_send_random_everything_search(void)
 		DWORD size;
 		wchar_t new_search[STRING_SIZE];
 		
-		string_copy_utf8_string(new_search,"ext:bmp;gif;ico;jpeg;jpg;png;tif;tiff;webp <");
+		string_copy_utf8_string(new_search,"ext:bmp;gif;ico;jpeg;jpg;png;tif;tiff;psd;webp <");
 		string_cat(new_search,_viv_random);
 		string_cat_utf8(new_search,">");
 
