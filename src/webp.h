@@ -25,9 +25,12 @@
 extern "C" {
 #endif
 
-int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_data,DWORD frame_count,DWORD wide,DWORD high,int has_alpha),int (*frame_callback)(void *user_data,BYTE *pixels,int timestamp));
+typedef int (*webp_info_callback_t)(void *user_data,DWORD frame_count,DWORD wide,DWORD high,int has_alpha);
+typedef int (*webp_profile_callback_t)(void *user_data,const BYTE *icc_data,DWORD icc_size);
+typedef int (*webp_frame_callback_t)(void *user_data,BYTE *pixels,int timestamp);
+
+int webp_load(IStream *stream,void *user_data,webp_info_callback_t info_callback,webp_profile_callback_t profile_callback,webp_frame_callback_t frame_callback);
 
 #ifdef __cplusplus
 }
 #endif
-

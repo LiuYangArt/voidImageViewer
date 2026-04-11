@@ -231,6 +231,7 @@ static const utf8_t *_localization_string_array_zh_cn[LOCALIZATION_ID_COUNT] =
 	"在幻灯片中至少播放一次动画(&P)", // LOCALIZATION_ID_PLAY_ANIMATIONS_ONCE_STATIC,
 	"预加载下一张图像(&N)", // LOCALIZATION_ID_PRELOAD_NEXT_IMAGE_STATIC,
 	"缓存最后一张图像(&L)", // LOCALIZATION_ID_CACHE_LAST_IMAGE_STATIC,
+	"启用 ICC 色彩管理(&I)", // LOCALIZATION_ID_ENABLE_ICM_STATIC,
 	"窗口背景颜色(&W):", // LOCALIZATION_ID_WINDOWED_BACKGROUND_COLOR_STATIC,
 	"全屏背景颜色(&F):", // LOCALIZATION_ID_FULLSCREEN_BACKGROUND_COLOR_STATIC,
 	"左键操作(&L):", // LOCALIZATION_ID_LEFT_CLICK_ACTION_STATIC,
@@ -297,3 +298,4 @@ static const utf8_t *_localization_string_array_zh_cn[LOCALIZATION_ID_COUNT] =
 	"PSD Image",
 	"WebP Image",
 };
+

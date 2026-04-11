@@ -1588,6 +1588,7 @@
     <ClCompile Include="..\libwebp\src\utils\rescaler_utils.c" />
     <ClCompile Include="..\libwebp\src\utils\thread_utils.c" />
     <ClCompile Include="..\libwebp\src\utils\utils.c" />
+    <ClCompile Include="..\src\color.c" />
     <ClCompile Include="..\src\config.c" />
     <ClCompile Include="..\src\debug.c" />
     <ClCompile Include="..\src\ini.c" />
@@ -1642,6 +1643,7 @@
     <ClInclude Include="..\libwebp\src\utils\thread_utils.h" />
     <ClInclude Include="..\libwebp\src\utils\utils.h" />
     <ClInclude Include="..\res\resource.h" />
+    <ClInclude Include="..\src\color.h" />
     <ClInclude Include="..\src\config.h" />
     <ClInclude Include="..\src\debug.h" />
     <ClInclude Include="..\src\everything_ipc.h" />
@@ -1687,3 +1689,4 @@
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
   </ImportGroup>
 </Project>
+

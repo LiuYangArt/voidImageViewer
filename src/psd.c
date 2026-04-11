@@ -54,6 +54,8 @@ typedef struct _viv_psd_s
 	DWORD palette_size;
 	int has_transparency_index;
 	BYTE transparency_index;
+	const BYTE *icc_profile;
+	DWORD icc_profile_size;
 	
 }_viv_psd_t;
 
@@ -390,7 +392,8 @@ static int psd_read_image_resources(_viv_psd_t *psd)
 		else
 		if (resource_id == PSD_RESOURCE_ID_ICC_PROFILE)
 		{
-			/* Parsed only so the section walk stays correct for future color-management work. */
+			psd->icc_profile = resource_data;
+			psd->icc_profile_size = size;
 		}
 		
 		if (size & 1)
@@ -936,7 +939,7 @@ static int psd_normalize_to_rgba8(const _viv_psd_t *psd,const BYTE *plane_data,B
 	return 1;
 }
 
-int psd_load(IStream *stream,void *user_data,psd_info_callback_t info_callback,psd_frame_callback_t frame_callback)
+int psd_load(IStream *stream,void *user_data,psd_info_callback_t info_callback,psd_profile_callback_t profile_callback,psd_frame_callback_t frame_callback)
 {
 	int ret;
 	HGLOBAL hglobal;
@@ -995,6 +998,15 @@ int psd_load(IStream *stream,void *user_data,psd_info_callback_t info_callback,p
 															{
 																psd.has_alpha = 1;
 															}
+																		if ((profile_callback) && (psd.icc_profile) && (psd.icc_profile_size))
+																		{
+																			if (!profile_callback(user_data,psd.icc_profile,psd.icc_profile_size))
+																			{
+																				GlobalUnlock(hglobal);
+																				return 0;
+																			}
+																		}
+
 															
 															if (info_callback(user_data,1,psd.width,psd.height,psd.has_alpha))
 															{

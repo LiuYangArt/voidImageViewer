@@ -142,6 +142,13 @@ int (__stdcall *os_GdipSetPixelOffsetMode)(void* graphics,int pixelOffsetMode) =
 int (__stdcall *os_GdipSetSmoothingMode)(void *graphics, int smoothingMode) = 0;
 int (__stdcall *os_GdipDrawImageRectI)(void *graphics, void *image, INT x, INT y,INT width, INT height) = 0;
 int (__stdcall *os_GdipDeleteGraphics)(void *graphics) = 0;
+BOOL (WINAPI *os_GetICMProfileW)(HDC hdc,LPDWORD profile_path_size,LPWSTR profile_path) = 0;
+HPROFILE (WINAPI *os_OpenColorProfileW)(PPROFILE profile,DWORD desired_access,DWORD share_mode,DWORD creation_mode) = 0;
+BOOL (WINAPI *os_CloseColorProfile)(HPROFILE profile) = 0;
+HTRANSFORM (WINAPI *os_CreateMultiProfileTransform)(PHPROFILE profiles,DWORD profile_count,PDWORD intents,DWORD intent_count,DWORD flags,DWORD preferred_cmm) = 0;
+BOOL (WINAPI *os_DeleteColorTransform)(HTRANSFORM transform) = 0;
+BOOL (WINAPI *os_TranslateBitmapBits)(HTRANSFORM transform,PVOID src_bits,BMFORMAT input_format,DWORD wide,DWORD high,DWORD src_stride,PVOID dst_bits,BMFORMAT output_format,DWORD dst_stride,PBMCALLBACKFN callback,LPARAM callback_data) = 0;
+BOOL (WINAPI *os_GetStandardColorSpaceProfileW)(PCWSTR machine_name,DWORD standard_color_space,PWSTR profile_path,PDWORD profile_path_size) = 0;
 BOOL (STDAPICALLTYPE *os_IsUserAnAdmin)(void) = 0;
 HRESULT (__stdcall *os_EnableThemeDialogTexture)(HWND hwnd, DWORD dwFlags) = 0;
 static unsigned int (__cdecl *_os_controlfp)(unsigned int _NewValue,unsigned int _Mask) = 0;
@@ -168,6 +175,7 @@ static HMODULE _os_UxTheme_hmodule = 0;
 static HMODULE _os_gdiplus_hmodule = 0;
 static HMODULE _os_ucrtbase_hmodule = 0;
 static HMODULE _os_gdi32_hmodule = 0;
+static HMODULE _os_mscms_hmodule = 0;
 
 void os_zero_memory(void *data,int size)
 {
@@ -289,6 +297,65 @@ void os_MonitorRectFromWindow(HWND hwnd,int is_fullscreen,RECT *out_monitor_rect
 		}
 debug_printf("FULLSCREEN %d %d %d\n",is_fullscreen,out_monitor_rect->right,out_monitor_rect->bottom)	;
 	}
+}
+
+int os_GetMonitorColorProfileFromWindow(HWND hwnd,wchar_t *out_profile_path,DWORD profile_path_size)
+{
+	HMONITOR hmonitor;
+	MONITORINFOEXW mi;
+	HDC hdc;
+	int ret;
+	
+	if ((!out_profile_path) || (!profile_path_size))
+	{
+		return 0;
+	}
+	
+	out_profile_path[0] = 0;
+	ret = 0;
+	hmonitor = NULL;
+	hdc = NULL;
+	
+	if (_os_MonitorFromWindow)
+	{
+		hmonitor = _os_MonitorFromWindow(hwnd,MONITOR_DEFAULTTONEAREST);
+	}
+	
+	if (hmonitor)
+	{
+		os_zero_memory(&mi,sizeof(MONITORINFOEXW));
+		mi.cbSize = sizeof(MONITORINFOEXW);
+		if (GetMonitorInfoW(hmonitor,(MONITORINFO *)&mi))
+		{
+			hdc = CreateDCW(mi.szDevice,NULL,NULL,NULL);
+		}
+	}
+	
+	if ((hdc) && (os_GetICMProfileW))
+	{
+		DWORD size;
+		
+		size = profile_path_size;
+		if (os_GetICMProfileW(hdc,&size,out_profile_path))
+		{
+			ret = 1;
+		}
+		
+		DeleteDC(hdc);
+	}
+	
+	if ((!ret) && (os_GetStandardColorSpaceProfileW))
+	{
+		DWORD size;
+		
+		size = profile_path_size;
+		if (os_GetStandardColorSpaceProfileW(NULL,LCS_sRGB,out_profile_path,&size))
+		{
+			ret = 1;
+		}
+	}
+	
+	return ret;
 }
 
 void os_MonitorRectFromRect(RECT *window_rect,int is_fullscreen,RECT *out_monitor_rect)
@@ -888,8 +955,19 @@ void os_init(void)
 	if (_os_gdi32_hmodule)
 	{
 		os_GetLayout = (void *)GetProcAddress(_os_user32_hmodule,"GetLayout");
+		os_GetICMProfileW = (void *)GetProcAddress(_os_gdi32_hmodule,"GetICMProfileW");
 	}
 
+	_os_mscms_hmodule = LoadLibraryA("mscms.dll");
+	if (_os_mscms_hmodule)
+	{
+		os_OpenColorProfileW = (void *)GetProcAddress(_os_mscms_hmodule,"OpenColorProfileW");
+		os_CloseColorProfile = (void *)GetProcAddress(_os_mscms_hmodule,"CloseColorProfile");
+		os_CreateMultiProfileTransform = (void *)GetProcAddress(_os_mscms_hmodule,"CreateMultiProfileTransform");
+		os_DeleteColorTransform = (void *)GetProcAddress(_os_mscms_hmodule,"DeleteColorTransform");
+		os_TranslateBitmapBits = (void *)GetProcAddress(_os_mscms_hmodule,"TranslateBitmapBits");
+		os_GetStandardColorSpaceProfileW = (void *)GetProcAddress(_os_mscms_hmodule,"GetStandardColorSpaceProfileW");
+	}
 	_os_gdiplus_hmodule = LoadLibraryA("gdiplus.dll");
 	if (_os_gdiplus_hmodule)
 	{
@@ -925,6 +1003,10 @@ void os_kill(void)
 		FreeLibrary(_os_user32_hmodule);
 	}
 		
+	if (_os_mscms_hmodule)
+	{
+		FreeLibrary(_os_mscms_hmodule);
+	}
 	if (_os_shell32_hmodule)
 	{
 		FreeLibrary(_os_shell32_hmodule);

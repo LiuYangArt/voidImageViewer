@@ -230,6 +230,7 @@ static const utf8_t *_localization_string_array_en_us[LOCALIZATION_ID_COUNT] =
 	"&Play animations at least once in slideshow", // LOCALIZATION_ID_PLAY_ANIMATIONS_ONCE_STATIC,
 	"Preload &next image", // LOCALIZATION_ID_PRELOAD_NEXT_IMAGE_STATIC,
 	"Cache &last image", // LOCALIZATION_ID_CACHE_LAST_IMAGE_STATIC,
+	"Enable &ICC color management", // LOCALIZATION_ID_ENABLE_ICM_STATIC,
 	"&Windowed background color:", // LOCALIZATION_ID_WINDOWED_BACKGROUND_COLOR_STATIC,
 	"&Fullscreen background color:", // LOCALIZATION_ID_FULLSCREEN_BACKGROUND_COLOR_STATIC,
 	"&Left click action:", // LOCALIZATION_ID_LEFT_CLICK_ACTION_STATIC,
@@ -296,3 +297,4 @@ static const utf8_t *_localization_string_array_en_us[LOCALIZATION_ID_COUNT] =
 	"PSD Image",
 	"WebP Image",
 };
+

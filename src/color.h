@@ -19,17 +19,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-// psd layer
+// color management helpers
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef int (*psd_info_callback_t)(void *user_data,DWORD frame_count,DWORD wide,DWORD high,int has_alpha);
-typedef int (*psd_profile_callback_t)(void *user_data,const BYTE *icc_data,DWORD icc_size);
-typedef int (*psd_frame_callback_t)(void *user_data,BYTE *pixels,int delay);
+typedef struct color_profile_s
+{
+	BYTE *data;
+	DWORD size;
 
-int psd_load(IStream *stream,void *user_data,psd_info_callback_t info_callback,psd_profile_callback_t profile_callback,psd_frame_callback_t frame_callback);
+} color_profile_t;
+
+void color_profile_init(color_profile_t *profile);
+void color_profile_clear(color_profile_t *profile);
+int color_profile_set(color_profile_t *profile,const BYTE *data,DWORD size);
+int color_icm_is_active(void);
+int color_get_bgra_size(DWORD wide,DWORD high,SIZE_T *out_size);
+int color_copy_hbitmap_to_bgra(HBITMAP hbitmap,DWORD wide,DWORD high,BYTE **out_pixels);
+HBITMAP color_create_hbitmap_from_bgra(DWORD wide,DWORD high,const BYTE *pixels);
+int color_transform_to_srgb(BYTE *pixels,DWORD wide,DWORD high,const color_profile_t *source_profile,const wchar_t *source_profile_path);
+int color_transform_srgb_to_display(const BYTE *src_pixels,BYTE *dst_pixels,DWORD wide,DWORD high,const wchar_t *display_profile_path);
+void color_copy_rgba_to_bgra(const BYTE *src_pixels,BYTE *dst_pixels,DWORD wide,DWORD high);
+void color_flatten_bgra(BYTE *pixels,DWORD wide,DWORD high,COLORREF background_color);
+int color_orient_bgra(BYTE **pixels,DWORD *wide,DWORD *high,int orientation);
 
 #ifdef __cplusplus
 }

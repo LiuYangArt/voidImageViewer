@@ -26,7 +26,37 @@
 #include <src/webp/demux.h>
 #include <assert.h>
 
-int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_data,DWORD frame_count,DWORD wide,DWORD high,int has_alpha),int (*frame_callback)(void *user_data,BYTE *pixels,int delay))
+static void _webp_report_profile(const WebPData *webp_data,void *user_data,webp_profile_callback_t profile_callback)
+{
+	WebPDemuxer *demux;
+	
+	if ((!webp_data) || (!profile_callback))
+	{
+		return;
+	}
+	
+	demux = WebPDemux(webp_data);
+	if (demux)
+	{
+		uint32_t flags;
+		
+		flags = WebPDemuxGetI(demux,WEBP_FF_FORMAT_FLAGS);
+		if (flags & ICCP_FLAG)
+		{
+			WebPChunkIterator chunk_iter;
+			
+			if (WebPDemuxGetChunk(demux,"ICCP",1,&chunk_iter))
+			{
+				profile_callback(user_data,chunk_iter.chunk.bytes,(DWORD)chunk_iter.chunk.size);
+				WebPDemuxReleaseChunkIterator(&chunk_iter);
+			}
+		}
+		
+		WebPDemuxDelete(demux);
+	}
+}
+
+int webp_load(IStream *stream,void *user_data,webp_info_callback_t info_callback,webp_profile_callback_t profile_callback,webp_frame_callback_t frame_callback)
 {
 	int ret;
 	HGLOBAL hglobal;
@@ -44,11 +74,16 @@ int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_da
 		{
 			WebPBitstreamFeatures features;
 			SIZE_T data_size;
+			WebPData webp_data;
 			
 			data_size = GlobalSize(hglobal);	
+			webp_data.bytes = data_ptr;
+			webp_data.size = data_size;
 			
 			if (WebPGetFeatures(data_ptr,data_size,&features) == VP8_STATUS_OK)
 			{
+				_webp_report_profile(&webp_data,user_data,profile_callback);
+				
 				if (features.has_animation)
 				{
 					WebPAnimDecoderOptions anim_decoder_options;
@@ -56,11 +91,6 @@ int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_da
 					
 					if (WebPAnimDecoderOptionsInit(&anim_decoder_options))
 					{
-						WebPData webp_data;
-
-						webp_data.bytes = data_ptr;
-						webp_data.size = data_size;
-						
 						anim_decoder = WebPAnimDecoderNew(&webp_data,&anim_decoder_options);
 						if (anim_decoder)
 						{
@@ -74,7 +104,7 @@ int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_da
 									int timestamp;
 									DWORD frame_run;
 									DWORD last_timestamp;
-																			
+																	
 									frame = NULL;
 									frame_run = anim_info.frame_count;
 									last_timestamp = 0;
@@ -86,35 +116,6 @@ int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_da
 										if (WebPAnimDecoderGetNext(anim_decoder, &frame, &timestamp)) 
 										{
 											DWORD delay;
-											
-											// `frame` is a RGBA image of size: canvas_width * canvas_height * 4
-											// `timestamp` is in milliseconds
-											// Process the frame (copy/store/display)
-											
-											// convert RGBA to BGRA
-											/*
-											{
-												BYTE *p;
-												DWORD run;
-												
-												run = anim_info.canvas_width * anim_info.canvas_height;
-												p = frame;
-												
-												while(run)
-												{
-													int r;
-													int b;
-													
-													b = p[0];
-													r = p[2];
-													
-													p[0] = r;
-													p[2] = b;
-													
-													p += 4;
-													run--;
-												}
-											}*/
 											
 											delay = 0;
 											
@@ -133,7 +134,6 @@ int webp_load(IStream *stream,void *user_data,int (*info_callback)(void *user_da
 										}
 										else
 										{
-											// expected frame?
 											ret = 0;
 											break;
 										}

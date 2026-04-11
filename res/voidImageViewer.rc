@@ -83,10 +83,11 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,0,70,192,10
     CONTROL         "Preload &next image",IDC_PRELOAD_NEXT_IMAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,0,87,192,10
     CONTROL         "Cache &last image",IDC_CACHE_LAST_IMAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,0,103,192,10
-    LTEXT           "&Windowed background color:",IDC_WINDOWEDBACKGROUNDCOLOR_STATIC,0,122,96,8
-    PUSHBUTTON      "",IDC_WINDOWEDBACKGROUNDCOLOR,96,120,50,14,BS_BITMAP
-    LTEXT           "&Fullscreen background color:",IDC_FULLSCREENBACKGROUNDCOLOR_STATIC,0,140,96,8
-    PUSHBUTTON      "",IDC_FULLSCREENBACKGROUNDCOLOR,96,138,50,14,BS_BITMAP
+    CONTROL         "Enable &ICC color management",IDC_ENABLE_ICM,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,0,119,192,10
+    LTEXT           "&Windowed background color:",IDC_WINDOWEDBACKGROUNDCOLOR_STATIC,0,138,96,8
+    PUSHBUTTON      "",IDC_WINDOWEDBACKGROUNDCOLOR,96,136,50,14,BS_BITMAP
+    LTEXT           "&Fullscreen background color:",IDC_FULLSCREENBACKGROUNDCOLOR_STATIC,0,156,96,8
+    PUSHBUTTON      "",IDC_FULLSCREENBACKGROUNDCOLOR,96,154,50,14,BS_BITMAP
 END
 
 IDD_CONTROLS DIALOGEX 0, 0, 194, 216
@@ -225,7 +226,7 @@ BEGIN
             VALUE "FileDescription", "voidImageViewer"
             VALUE "FileVersion", "1.0.0.15"
             VALUE "InternalName", "voidImageViewer"
-            VALUE "LegalCopyright", "Copyright © 2026 voidtools"
+            VALUE "LegalCopyright", "Copyright ï¿½ 2026 voidtools"
             VALUE "OriginalFilename", "voidImageViewer.exe"
             VALUE "ProductName", "voidImageViewer"
             VALUE "ProductVersion", "1.0.0.15"
@@ -287,4 +288,5 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
+
 

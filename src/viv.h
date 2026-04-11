@@ -54,6 +54,7 @@ typedef unsigned char utf8_t;
 typedef unsigned __int64 VIV_UINT64;
 
 #include <windows.h>
+#include <icm.h>
 #include <windowsx.h>
 #include <shlwapi.h>
 //#include <gdiplus.h>
@@ -228,6 +229,7 @@ enum
 #include "mem.h"
 #include "localization.h"
 #include "os.h"
+#include "color.h"
 #include "wchar.h"
 #include "string.h"
 #include "utf8.h"
