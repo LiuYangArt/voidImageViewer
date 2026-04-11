@@ -1,0 +1,50 @@
+621:static void _viv_clear_frames(_viv_frame_t *frames,int loaded_count);
+623:static void _viv_take_frame_ownership(_viv_frame_t *dst,_viv_frame_t *src);
+1291:static void _viv_clear_frames(_viv_frame_t *frames,int loaded_count)
+1310:		_viv_clear_frames(_viv_pending_clear_frames,_viv_pending_clear_frame_loaded_count);
+1333:		_viv_clear_frames(_viv_preload_frames,_viv_preload_frame_loaded_count);
+2892:								if (first_frame->frame.hbitmap)
+2894:									DeleteObject(first_frame->frame.hbitmap);
+2896:									first_frame->frame.hbitmap = NULL;
+2899:								if (first_frame->frame.mipmap)
+2901:									_viv_mipmap_free(first_frame->frame.mipmap);
+2903:									first_frame->frame.mipmap = NULL;
+2922:									_viv_preload_image_wide = first_frame->wide;
+2923:									_viv_preload_image_high = first_frame->high;
+2924:									_viv_preload_frame_count = first_frame->frame_count;
+2929:									_viv_take_frame_ownership(&_viv_preload_frames[0],&first_frame->frame);
+2941:									_viv_image_wide = first_frame->wide;
+2942:									_viv_image_high = first_frame->high;
+2943:									_viv_frame_count = first_frame->frame_count;
+2948:									_viv_take_frame_ownership(&_viv_frames[0],&first_frame->frame);
+2974:								if (additional_frame->hbitmap)
+2976:									DeleteObject(additional_frame->hbitmap);
+2978:									additional_frame->hbitmap = NULL;
+2981:								if (additional_frame->mipmap)
+2983:									_viv_mipmap_free(additional_frame->mipmap);
+2985:									additional_frame->mipmap = NULL;
+3004:										_viv_take_frame_ownership(&_viv_preload_frames[_viv_preload_frame_loaded_count],additional_frame);
+3017:											_viv_take_frame_ownership(&_viv_frames[_viv_frame_loaded_count],additional_frame);
+5474:		_viv_clear_frames(_viv_last_frames,_viv_last_frame_count);
+10090:	if (frame->hbitmap)
+10092:		DeleteObject(frame->hbitmap);
+10093:		frame->hbitmap = NULL;
+10096:	if (frame->mipmap)
+10098:		_viv_mipmap_free(frame->mipmap);
+10099:		frame->mipmap = NULL;
+10102:	frame->display_profile_path[0] = 0;
+10112:	if ((!frame) || (!frame->srgb_pixels) || (wide <= 0) || (high <= 0))
+10129:				if (color_transform_srgb_to_display(frame->srgb_pixels,display_pixels,(DWORD)wide,(DWORD)high,current_display_profile_path))
+10144:		display_pixels = frame->srgb_pixels;
+10147:	frame->hbitmap = color_create_hbitmap_from_bgra((DWORD)wide,(DWORD)high,display_pixels);
+10148:	if (display_pixels != frame->srgb_pixels)
+10153:	if (!frame->hbitmap)
+10160:		string_copy(frame->display_profile_path,current_display_profile_path);
+10181:	if ((!frame->hbitmap) || (string_compare(frame->display_profile_path,current_display_profile_path) != 0))
+10263:	out_frame->srgb_pixels = bgra_pixels;
+10267:		out_frame->srgb_pixels = NULL;
+10784:		if (frame->srgb_pixels)
+10786:			mem_free(frame->srgb_pixels);
+10793:static void _viv_take_frame_ownership(_viv_frame_t *dst,_viv_frame_t *src)
+14362:		_viv_clear_frames(_viv_last_frames,_viv_last_frame_count);
+14467:		_viv_clear_frames(_viv_last_frames,_viv_last_frame_count);

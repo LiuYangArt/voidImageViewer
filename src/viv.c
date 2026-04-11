@@ -5524,6 +5524,8 @@ static void _viv_kill(void)
 		os_GdiplusShutdown(os_GdiplusToken);
 	}
 
+	color_clear_transform_cache();
+
 	if (_viv_stobject_hmodule)
 	{
 		FreeLibrary(_viv_stobject_hmodule);
@@ -10206,10 +10208,10 @@ static int _viv_update_display_profile_if_needed(int redraw)
 	changed = 0;
 	for(i=0;i<_viv_frame_loaded_count;i++)
 	{
-		if ((!_viv_frames[i].hbitmap) || (string_compare(_viv_frames[i].display_profile_path,current_display_profile_path) != 0))
+		if ((_viv_frames[i].hbitmap) && (string_compare(_viv_frames[i].display_profile_path,current_display_profile_path) != 0))
 		{
-			_viv_delete_frame_display_cache(&_viv_frames[i]);
 			changed = 1;
+			break;
 		}
 	}
 	

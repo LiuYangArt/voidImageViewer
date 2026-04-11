@@ -41,6 +41,7 @@ int color_copy_hbitmap_to_bgra(HBITMAP hbitmap,DWORD wide,DWORD high,BYTE **out_
 HBITMAP color_create_hbitmap_from_bgra(DWORD wide,DWORD high,const BYTE *pixels);
 int color_transform_to_srgb(BYTE *pixels,DWORD wide,DWORD high,const color_profile_t *source_profile,const wchar_t *source_profile_path);
 int color_transform_srgb_to_display(const BYTE *src_pixels,BYTE *dst_pixels,DWORD wide,DWORD high,const wchar_t *display_profile_path);
+void color_clear_transform_cache(void);
 void color_copy_rgba_to_bgra(const BYTE *src_pixels,BYTE *dst_pixels,DWORD wide,DWORD high);
 void color_flatten_bgra(BYTE *pixels,DWORD wide,DWORD high,COLORREF background_color);
 int color_orient_bgra(BYTE **pixels,DWORD *wide,DWORD *high,int orientation);
