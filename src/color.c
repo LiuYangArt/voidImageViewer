@@ -73,6 +73,11 @@ static CRITICAL_SECTION _color_transform_cache_cs;
 static volatile LONG _color_transform_cache_state = 0;
 static DWORD _color_transform_cache_tick = 0;
 static _color_transform_cache_entry_t _color_transform_cache[_COLOR_TRANSFORM_CACHE_SIZE];
+static volatile LONG _color_standard_srgb_profile_state = 0;
+static BYTE *_color_standard_srgb_profile_data = NULL;
+static DWORD _color_standard_srgb_profile_size = 0;
+static VIV_UINT64 _color_standard_srgb_profile_hash = 0;
+static wchar_t _color_standard_srgb_profile_path[STRING_SIZE];
 
 #ifdef _DEBUG
 static void _color_perf_timer_start(_color_perf_timer_t *timer)
@@ -483,6 +488,117 @@ static int _color_get_profile_path_for_srgb(wchar_t *path,DWORD path_size)
 	return os_GetStandardColorSpaceProfileW(NULL,LCS_sRGB,path,&size) ? 1 : 0;
 }
 
+static int _color_read_profile_file(const wchar_t *path,BYTE **out_data,DWORD *out_size)
+{
+	HANDLE file;
+	LARGE_INTEGER size;
+	BYTE *data;
+	DWORD bytes_read;
+	int ret;
+
+	if ((!path) || (!*path) || (!out_data) || (!out_size))
+	{
+		return 0;
+	}
+
+	file = CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+	if (file == INVALID_HANDLE_VALUE)
+	{
+		return 0;
+	}
+
+	ret = 0;
+	data = NULL;
+	bytes_read = 0;
+	if ((GetFileSizeEx(file,&size)) && (size.QuadPart > 0) && (size.QuadPart <= _COLOR_MAX_PROFILE_SIZE) && (size.QuadPart <= 0xffffffffUI64))
+	{
+		data = (BYTE *)mem_alloc((SIZE_T)size.QuadPart);
+		if ((data) && (ReadFile(file,data,(DWORD)size.QuadPart,&bytes_read,NULL)) && (bytes_read == (DWORD)size.QuadPart))
+		{
+			*out_data = data;
+			*out_size = (DWORD)size.QuadPart;
+			ret = 1;
+		}
+		else if (data)
+		{
+			mem_free(data);
+		}
+	}
+
+	CloseHandle(file);
+	return ret;
+}
+
+static int _color_ensure_standard_srgb_profile_loaded(void)
+{
+	LONG state;
+	BYTE *data;
+	DWORD size;
+	wchar_t path[STRING_SIZE];
+
+	state = _color_standard_srgb_profile_state;
+	if (state == 2)
+	{
+		return 1;
+	}
+
+	if (state == 3)
+	{
+		return 0;
+	}
+
+	if (InterlockedCompareExchange(&_color_standard_srgb_profile_state,1,0) != 0)
+	{
+		while(_color_standard_srgb_profile_state == 1)
+		{
+			Sleep(0);
+		}
+
+		return _color_standard_srgb_profile_state == 2;
+	}
+
+	path[0] = 0;
+	data = NULL;
+	size = 0;
+	if ((_color_get_profile_path_for_srgb(path,STRING_SIZE)) && (_color_read_profile_file(path,&data,&size)))
+	{
+		_color_standard_srgb_profile_data = data;
+		_color_standard_srgb_profile_size = size;
+		_color_standard_srgb_profile_hash = _color_hash_blob(data,size);
+		string_copy(_color_standard_srgb_profile_path,path);
+		InterlockedExchange(&_color_standard_srgb_profile_state,2);
+		return 1;
+	}
+
+	InterlockedExchange(&_color_standard_srgb_profile_state,3);
+	return 0;
+}
+
+static int _color_lookup_key_is_standard_srgb(const _color_profile_lookup_key_t *key)
+{
+	if (!key)
+	{
+		return 0;
+	}
+
+	if (!_color_ensure_standard_srgb_profile_loaded())
+	{
+		return 0;
+	}
+
+	if (key->is_blob)
+	{
+		return (key->blob_size == _color_standard_srgb_profile_size) && (key->blob_hash == _color_standard_srgb_profile_hash) && (_color_compare_blob_data(key->blob_data,_color_standard_srgb_profile_data,key->blob_size));
+	}
+
+	if ((key->path) && (*key->path))
+	{
+		return string_compare(key->path,_color_standard_srgb_profile_path) == 0;
+	}
+
+	return 0;
+}
+
 static HPROFILE _color_open_profile_from_blob(const color_profile_t *profile)
 {
 	PROFILE open_profile;
@@ -664,6 +780,11 @@ static int _color_transform_bgra_internal(const BYTE *src_pixels,BYTE *dst_pixel
 	}
 
 	_color_profile_lookup_key_set_path(&destination_lookup_key,resolved_destination_profile_path);
+	if ((_color_lookup_key_is_standard_srgb(&source_lookup_key)) && ((_color_lookup_key_is_standard_srgb(&destination_lookup_key)) || (destination_is_srgb)))
+	{
+		return _color_copy_pixels(src_pixels,dst_pixels,wide,high);
+	}
+
 	cache_entry = _color_transform_cache_acquire(&source_lookup_key,&destination_lookup_key,source_intent,destination_intent,destination_is_srgb);
 	if (cache_entry)
 	{
@@ -803,6 +924,17 @@ void color_clear_transform_cache(void)
 	_color_transform_cache_unlock();
 	DeleteCriticalSection(&_color_transform_cache_cs);
 	_color_transform_cache_state = 0;
+
+	if (_color_standard_srgb_profile_data)
+	{
+		mem_free(_color_standard_srgb_profile_data);
+		_color_standard_srgb_profile_data = NULL;
+	}
+
+	_color_standard_srgb_profile_size = 0;
+	_color_standard_srgb_profile_hash = 0;
+	_color_standard_srgb_profile_path[0] = 0;
+	_color_standard_srgb_profile_state = 0;
 }
 
 void color_profile_init(color_profile_t *profile)
@@ -966,12 +1098,23 @@ HBITMAP color_create_hbitmap_from_bgra(DWORD wide,DWORD high,const BYTE *pixels)
 	BITMAPINFO bmi;
 	HBITMAP hbitmap;
 	HDC screen_hdc;
-	HDC mem_hdc;
+	void *dib_pixels;
+	SIZE_T bitmap_size;
 	#ifdef _DEBUG
 	_color_perf_timer_t timer;
 	#endif
 	
 	if ((!wide) || (!high) || (!pixels))
+	{
+		return NULL;
+	}
+
+	if (!color_get_bgra_size(wide,high,&bitmap_size))
+	{
+		return NULL;
+	}
+
+	if (bitmap_size > 0x7fffffffU)
 	{
 		return NULL;
 	}
@@ -989,23 +1132,19 @@ HBITMAP color_create_hbitmap_from_bgra(DWORD wide,DWORD high,const BYTE *pixels)
 	bmi.bmiHeader.biCompression = BI_RGB;
 	
 	hbitmap = NULL;
+	dib_pixels = NULL;
 	screen_hdc = GetDC(NULL);
 	if (screen_hdc)
 	{
-		mem_hdc = CreateCompatibleDC(screen_hdc);
-		if (mem_hdc)
+		hbitmap = CreateDIBSection(screen_hdc,&bmi,DIB_RGB_COLORS,&dib_pixels,NULL,0);
+		if ((hbitmap) && (dib_pixels))
 		{
-			hbitmap = CreateCompatibleBitmap(screen_hdc,wide,high);
-			if (hbitmap)
-			{
-				if (!SetDIBits(mem_hdc,hbitmap,0,high,pixels,&bmi,DIB_RGB_COLORS))
-				{
-					DeleteObject(hbitmap);
-					hbitmap = NULL;
-				}
-			}
-			
-			DeleteDC(mem_hdc);
+			os_copy_memory(dib_pixels,pixels,(int)bitmap_size);
+		}
+		else if (hbitmap)
+		{
+			DeleteObject(hbitmap);
+			hbitmap = NULL;
 		}
 		
 		ReleaseDC(NULL,screen_hdc);
