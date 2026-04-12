@@ -25,6 +25,10 @@
 
 #define _COLOR_MAX_PROFILE_SIZE (64U * 1024U * 1024U)
 #define _COLOR_TRANSFORM_CACHE_SIZE 4
+#define _COLOR_STANDARD_SRGB_PROFILE_STATE_UNINITIALIZED 0
+#define _COLOR_STANDARD_SRGB_PROFILE_STATE_LOADING 1
+#define _COLOR_STANDARD_SRGB_PROFILE_STATE_READY 2
+#define _COLOR_STANDARD_SRGB_PROFILE_STATE_FAILED 3
 
 typedef struct _color_profile_lookup_key_s
 {
@@ -494,7 +498,6 @@ static int _color_read_profile_file(const wchar_t *path,BYTE **out_data,DWORD *o
 	LARGE_INTEGER size;
 	BYTE *data;
 	DWORD bytes_read;
-	int ret;
 
 	if ((!path) || (!*path) || (!out_data) || (!out_size))
 	{
@@ -507,26 +510,31 @@ static int _color_read_profile_file(const wchar_t *path,BYTE **out_data,DWORD *o
 		return 0;
 	}
 
-	ret = 0;
-	data = NULL;
-	bytes_read = 0;
-	if ((GetFileSizeEx(file,&size)) && (size.QuadPart > 0) && (size.QuadPart <= _COLOR_MAX_PROFILE_SIZE) && (size.QuadPart <= 0xffffffffUI64))
+	if ((!GetFileSizeEx(file,&size)) || (size.QuadPart <= 0) || (size.QuadPart > _COLOR_MAX_PROFILE_SIZE) || (size.QuadPart > 0xffffffffUI64))
 	{
-		data = (BYTE *)mem_alloc((SIZE_T)size.QuadPart);
-		if ((data) && (ReadFile(file,data,(DWORD)size.QuadPart,&bytes_read,NULL)) && (bytes_read == (DWORD)size.QuadPart))
-		{
-			*out_data = data;
-			*out_size = (DWORD)size.QuadPart;
-			ret = 1;
-		}
-		else if (data)
-		{
-			mem_free(data);
-		}
+		CloseHandle(file);
+		return 0;
 	}
 
+	data = (BYTE *)mem_alloc((SIZE_T)size.QuadPart);
+	if (!data)
+	{
+		CloseHandle(file);
+		return 0;
+	}
+
+	bytes_read = 0;
+	if ((!ReadFile(file,data,(DWORD)size.QuadPart,&bytes_read,NULL)) || (bytes_read != (DWORD)size.QuadPart))
+	{
+		mem_free(data);
+		CloseHandle(file);
+		return 0;
+	}
+
+	*out_data = data;
+	*out_size = (DWORD)size.QuadPart;
 	CloseHandle(file);
-	return ret;
+	return 1;
 }
 
 static int _color_ensure_standard_srgb_profile_loaded(void)
@@ -537,24 +545,24 @@ static int _color_ensure_standard_srgb_profile_loaded(void)
 	wchar_t path[STRING_SIZE];
 
 	state = _color_standard_srgb_profile_state;
-	if (state == 2)
+	if (state == _COLOR_STANDARD_SRGB_PROFILE_STATE_READY)
 	{
 		return 1;
 	}
 
-	if (state == 3)
+	if (state == _COLOR_STANDARD_SRGB_PROFILE_STATE_FAILED)
 	{
 		return 0;
 	}
 
-	if (InterlockedCompareExchange(&_color_standard_srgb_profile_state,1,0) != 0)
+	if (InterlockedCompareExchange(&_color_standard_srgb_profile_state,_COLOR_STANDARD_SRGB_PROFILE_STATE_LOADING,_COLOR_STANDARD_SRGB_PROFILE_STATE_UNINITIALIZED) != 0)
 	{
-		while(_color_standard_srgb_profile_state == 1)
+		while(_color_standard_srgb_profile_state == _COLOR_STANDARD_SRGB_PROFILE_STATE_LOADING)
 		{
 			Sleep(0);
 		}
 
-		return _color_standard_srgb_profile_state == 2;
+		return _color_standard_srgb_profile_state == _COLOR_STANDARD_SRGB_PROFILE_STATE_READY;
 	}
 
 	path[0] = 0;
@@ -566,11 +574,11 @@ static int _color_ensure_standard_srgb_profile_loaded(void)
 		_color_standard_srgb_profile_size = size;
 		_color_standard_srgb_profile_hash = _color_hash_blob(data,size);
 		string_copy(_color_standard_srgb_profile_path,path);
-		InterlockedExchange(&_color_standard_srgb_profile_state,2);
+		InterlockedExchange(&_color_standard_srgb_profile_state,_COLOR_STANDARD_SRGB_PROFILE_STATE_READY);
 		return 1;
 	}
 
-	InterlockedExchange(&_color_standard_srgb_profile_state,3);
+	InterlockedExchange(&_color_standard_srgb_profile_state,_COLOR_STANDARD_SRGB_PROFILE_STATE_FAILED);
 	return 0;
 }
 
@@ -934,7 +942,7 @@ void color_clear_transform_cache(void)
 	_color_standard_srgb_profile_size = 0;
 	_color_standard_srgb_profile_hash = 0;
 	_color_standard_srgb_profile_path[0] = 0;
-	_color_standard_srgb_profile_state = 0;
+	_color_standard_srgb_profile_state = _COLOR_STANDARD_SRGB_PROFILE_STATE_UNINITIALIZED;
 }
 
 void color_profile_init(color_profile_t *profile)

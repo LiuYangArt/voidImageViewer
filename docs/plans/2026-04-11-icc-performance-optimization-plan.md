@@ -379,3 +379,55 @@ ICC 这块最容易出错的不是“算法不快”，而是：
 - 它对数据结构冲击最小。
 - 它能立刻告诉我们后面的收益上限。
 - 它为后续显示缓存优化提供数据依据。
+
+## 11. 当前进度（2026-04-12）
+
+### 11.1 已完成
+
+截至 2026-04-12，下面这些优化已经实际落地并验证：
+
+1. `src/color.c` 已加入 `ICC transform` LRU 缓存，并保留 `Debug` 计时日志，减少重复 `OpenColorProfile / CreateMultiProfileTransform`。
+2. `src/viv.c` 已把“每帧单显示缓存”升级为“每帧 2 槽位 display cache”，双屏来回切换时可以直接命中已有显示缓存。
+3. 跨屏切换不再主动清空全部帧缓存，而是只在当前帧需要显示时懒构建并切换 active cache。
+4. 加载线程里原先预建 mipmap 的调用已经移除，mipmap 改成首次绘制时按需生成。
+5. 加载终止分支已经统一走 `_viv_delete_frame_display_cache(...)`，避免多槽位时代遗漏释放。
+6. `color_create_hbitmap_from_bgra(...)` 已改为 `CreateDIBSection + memcpy`，降低显示缓存重建时的位图创建固定成本。
+7. 已补充“标准 `sRGB` profile 零转换短路”，当源 blob 实际就是标准 `sRGB` 时，直接复制像素，不再创建 transform。
+
+### 11.2 阶段状态
+
+- Phase 1：已完成。`Debug` 下已经能看到转换与位图创建耗时。
+- Phase 2：已完成。transform cache 已实现并接入主转换路径。
+- Phase 3：已完成。每帧多槽位显示缓存已接入绘制、跨屏切换和释放逻辑。
+- Phase 4：未开始。还没有把 display cache 更积极地前移到预加载激活路径。
+- Phase 5：部分完成。mipmap 延迟生成、源/目标同 profile 短路、标准 `sRGB` 零转换和更快的 `HBITMAP` 创建已完成；更激进的“当前显示器为标准 `sRGB` 时的整链最短路径”还未做。
+
+### 11.3 本轮验证结果
+
+本轮代码改动后，已实际完成以下验证：
+
+1. `vs2026\voidImageViewer.sln` 的 `x64 Debug` 构建通过，`0 warning / 0 error`。
+2. `vs2026\voidImageViewer.sln` 的 `x64 Release` 构建通过，`0 warning / 0 error`。
+3. 使用 `Release` 版 exe 实际起窗验证：
+   - `C:\Users\LiuYang\Desktop\sRGB_Gray.png`
+   - `C:\Users\LiuYang\Desktop\sRGB_Gray.jpg`
+   - `C:\Users\LiuYang\Desktop\fac.psd`
+4. 上述样本都能正常起窗，未出现 ICC 回退或加载崩溃。
+
+## 12. 实施经验
+
+这次优化里，有几条经验已经比较明确：
+
+1. 体感卡顿的核心不是“ICC 本身慢”，而是“同一份工作被重复做了很多次”。真正收益最大的点，都是消除重复转换、重复建 transform、重复建显示缓存。
+2. `display cache` 的多槽位收益很直接。双屏切换原先是“换屏就整批失效”，现在改成“按需命中和重建”之后，跨屏来回切换的重复成本明显下降。
+3. mipmap 提前生成虽然看起来像优化，但在当前架构里会把首帧加载链路拉长。改成绘制时按需生成更符合真实使用路径。
+4. `HBITMAP` 创建本身也是固定成本热点。ICC 优化不能只盯颜色转换，GDI 对象创建同样会被用户感知到。
+5. ICC 这块最大的风险始终不是速度，而是缓存一致性和资源生命周期。只要 active slot、reply 所有权、清理路径里有一处没收口，就很容易出现悬空句柄或二次释放。
+
+## 13. 下一步建议
+
+如果继续往下做，优先级建议改成下面这样：
+
+1. 先检查 `preload` 激活路径，把当前显示器的 display cache 更积极地前移到预加载结果里。
+2. 再评估“当前显示器 profile 本身是标准 `sRGB`”时，是否能进一步短路 `sRGB -> display`。
+3. 最后再针对大图首开的 `source -> sRGB` 整图转换做更细的拆分或后台化评估。
