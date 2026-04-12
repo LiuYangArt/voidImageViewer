@@ -4,7 +4,7 @@
 
 - 具体 PSD 结构、开源参考实现、解码边界和 `psd_load()` 伪代码见 [PSD 解析设计说明](2026-04-01-psd-parsing-notes.md)
 
-## 0. 进度更新（2026-04-02）
+## 0. 进度更新（2026-04-12）
 
 当前仓库状态已经从“方案阶段”进入“首版已接入并可基本使用”：
 
@@ -15,27 +15,30 @@
 - 已清理工程里残留的 `UpgradeFromVC71.props` 导入，避免 VS2022 再触发旧升级脚本错误
 - 已验证 `vs2026` 工程在 VS2022 环境下 `Release|x64` / `Debug|x64` 可以成功编译
 - 已完成一次手动验证：普通 PSD 文件可以成功打开
+- 已用 ZBrush `16-bit Grayscale Raw PSD` 样本验证：`4096x4096` 与 `1024x1024` 两组样本都能成功解码
 
 当前首版的实际边界：
 
 - 已实现所有计划内 8-bit PSD 颜色模式的解析分发路径：`Grayscale / Indexed / RGB / CMYK / Multichannel / Duotone / Lab`
 - 已实现所有计划内 8-bit PSD 压缩：`Raw / RLE / ZIP / ZIP with prediction`
+- 已支持 `16-bit Grayscale / RGB / CMYK / Multichannel / Duotone` 合成图降到 8-bit `RGBA` 后显示，已验证 ZBrush alpha PSD 与普通 8-bit PSD 不回归
 - 当前显示目标仍然是“合成图只读显示”，不涉及图层编辑语义
 
 当前仍未完成或未系统验证的部分：
 
 - 还没有接入真正的 ICC profile 到 sRGB 颜色管理链，`CMYK / Lab / Duotone / Multichannel` 目前仍是公式型转换，精度边界低于原计划中的完整颜色管理目标
-- 还没有做完整样本矩阵验证，尤其是全部颜色模式、超大 PSD、非法 PSD、16-bit PSD 的系统回归
+- 还没有做完整样本矩阵验证，尤其是全部颜色模式、超大 PSD、非法 PSD，以及 16-bit 支持子集之外格式的系统回归
 - 还没有验证 `x86` 工程与全部历史工程配置
 
 ## 1. 结论
 
-可以做，但范围已经从“常见 8-bit RGB/RGBA PSD”提升为“所有 8-bit PSD”。按这个目标执行时，首版定义应改为：
+可以做，但范围已经从“常见 8-bit RGB/RGBA PSD”提升为“所有 8-bit PSD + 一部分常见 16-bit 合成图”。按这个目标执行时，首版定义应改为：
 
 - 支持打开 `.psd`
 - 只读显示 PSD 的扁平合成图像
 - 目标覆盖所有 8-bit PSD 颜色模式：`Grayscale / Indexed / RGB / CMYK / Multichannel / Duotone / Lab`
 - 覆盖所有 8-bit PSD 常见压缩：`Raw / RLE / ZIP / ZIP with prediction`
+- 额外支持 `16-bit Grayscale / RGB / CMYK / Multichannel / Duotone` 的合成图降采样显示
 - 复用现有单帧图片显示路径，不引入图层编辑能力
 
 这仍然不是完整 Photoshop 兼容层，因为我们依然只显示最终合成图，不实现图层编辑和 Photoshop UI 语义。但它已经明显高于原来的轻量扩展范围：除了 PSD 容器解析，还必须补齐颜色模式分发、ZIP 解压和颜色空间转换。对这个项目来说，最合理的方案仍然不是重写主显示管线，而是沿用当前 `GDI+ 失败 -> 特殊格式专用解码器` 的模式，为 PSD 增加一个单独的解码模块。
@@ -66,6 +69,7 @@
 - 所有 8-bit PSD 颜色模式：`Grayscale / Indexed / RGB / CMYK / Multichannel / Duotone / Lab`
 - 所有 8-bit PSD 压缩：`Raw / RLE / ZIP / ZIP with prediction`
 - 8-bit RGBA / 带透明通道的 PSD
+- 一部分常见 `16-bit` 合成图：`Grayscale / RGB / CMYK / Multichannel / Duotone`，输出时降采样到当前显示链路使用的 `RGBA8`
 - 从 PSD 读取最终合成结果并显示
 - 嵌入 ICC profile 时按 profile 转换到显示用 sRGB
 - 对不支持的 PSD 给出明确失败结果，而不是崩溃或黑图
@@ -74,7 +78,8 @@
 
 - `.psb`
 - `Bitmap` 1-bit 模式
-- 16-bit / 32-bit 通道深度
+- `32-bit` 通道深度
+- `16-bit Indexed / Lab` 以及其他未接入颜色语义的 16-bit 模式
 - 图层面板、单图层浏览、混合模式精确复现
 - 调整图层、文字图层、智能对象、滤镜效果的完整 Photoshop 级兼容
 - 动画 PSD
@@ -106,7 +111,7 @@ int psd_load(
 ```
 
 - 在 `src/viv.c` 的 `GDI+` 失败分支中，先尝试 `psd_load`，再决定是否最终报错
-- 在 `psd_load()` 内部完成颜色模式归一化，把任意 8-bit PSD 统一转换为 `BGRA8`
+- 在 `psd_load()` 内部完成颜色模式归一化，把支持的 8-bit / 16-bit PSD 统一转换为 `BGRA8`
 - 像 `WEBP` 一样，把解码出的 `BGRA8` 像素转换为 `HBITMAP`
 
 优点：
@@ -220,7 +225,7 @@ int psd_load(
 - Duotone PSD
 - Multichannel PSD
 - 大尺寸 PSD
-- 一个明确不支持的 16-bit PSD
+- 一个当前仍明确不支持的 16-bit PSD（例如 `Indexed` 或 `Lab`）
 
 通过标准：
 
@@ -275,7 +280,7 @@ int psd_load(
 
 交付结果：
 
-- `psd_load()` 可以对任意支持的 8-bit PSD 返回一张 `BGRA8` 图
+- `psd_load()` 可以对任意支持的 8-bit PSD，以及当前支持子集内的 16-bit PSD，返回一张 `BGRA8` 图
 
 ## 阶段 3：接入主加载线程
 
@@ -381,6 +386,7 @@ PSD 常见于设计稿，尺寸和图层数都可能非常大。即便只读合�
 
 - 可以直接打开 `.psd`
 - 所有 8-bit PSD 颜色模式都能正确显示尺寸和内容
+- `16-bit Grayscale / RGB / CMYK / Multichannel / Duotone` 能稳定降采样显示
 - `Raw / RLE / ZIP / ZIP with prediction` 都能正确解码
 - 带透明背景的 PSD 在当前背景色下显示合理
 - 切换上一张、下一张、预加载、缩放、最佳适应都正常

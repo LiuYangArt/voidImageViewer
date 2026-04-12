@@ -65,13 +65,17 @@ static int psd_skip_bytes(_viv_psd_t *psd,SIZE_T size);
 static int psd_read_u16_be(_viv_psd_t *psd,WORD *out_value);
 static int psd_read_u32_be(_viv_psd_t *psd,DWORD *out_value);
 static DWORD psd_get_color_channels(WORD color_mode,WORD channels);
+static int psd_is_supported_depth_color_mode(WORD depth,WORD color_mode);
+static SIZE_T psd_get_bytes_per_sample(const _viv_psd_t *psd);
 static int psd_read_header(_viv_psd_t *psd);
 static int psd_read_color_mode_data(_viv_psd_t *psd);
 static int psd_skip_pascal_string(_viv_psd_t *psd);
 static int psd_read_image_resources(_viv_psd_t *psd);
 static int psd_skip_layer_mask_info(_viv_psd_t *psd);
 static int psd_get_pixel_count(const _viv_psd_t *psd,SIZE_T *out_pixel_count);
+static int psd_get_channel_row_size(const _viv_psd_t *psd,SIZE_T *out_size);
 static int psd_get_plane_data_size(const _viv_psd_t *psd,SIZE_T *out_size);
+static int psd_get_channel_plane_size(const _viv_psd_t *psd,SIZE_T pixel_count,SIZE_T *out_size);
 static int psd_decode_packbits_row(const BYTE *src,SIZE_T src_size,BYTE *dst,DWORD row_width);
 static int psd_read_raw_image_data(_viv_psd_t *psd,BYTE *plane_data,SIZE_T plane_data_size);
 static int psd_read_rle_image_data(_viv_psd_t *psd,BYTE *plane_data,SIZE_T plane_data_size);
@@ -79,6 +83,9 @@ static int psd_apply_zip_prediction(const _viv_psd_t *psd,BYTE *plane_data,SIZE_
 static int psd_read_zip_image_data(_viv_psd_t *psd,BYTE *plane_data,SIZE_T plane_data_size,int with_prediction);
 static int psd_read_compressed_image_data(_viv_psd_t *psd,BYTE *plane_data,SIZE_T plane_data_size);
 static int psd_get_alpha_plane_index(const _viv_psd_t *psd);
+static WORD psd_read_sample_u16_be(const BYTE *sample_data);
+static BYTE psd_scale_u16_to_u8(WORD value);
+static BYTE psd_get_channel_sample_u8(const _viv_psd_t *psd,const BYTE *plane_data,SIZE_T pixel_count,DWORD channel_index,SIZE_T pixel_index);
 static BYTE psd_get_alpha_value(const _viv_psd_t *psd,const BYTE *plane_data,SIZE_T pixel_count,SIZE_T pixel_index);
 static BYTE psd_clamp_byte(int value);
 static BYTE psd_clamp_double_to_byte(double value);
@@ -178,6 +185,40 @@ static DWORD psd_get_color_channels(WORD color_mode,WORD channels)
 	return 0;
 }
 
+static int psd_is_supported_depth_color_mode(WORD depth,WORD color_mode)
+{
+	if (depth == 8)
+	{
+		return 1;
+	}
+
+	if (depth == 16)
+	{
+		switch (color_mode)
+		{
+			case PSD_COLOR_MODE_GRAYSCALE:
+			case PSD_COLOR_MODE_RGB:
+			case PSD_COLOR_MODE_CMYK:
+			case PSD_COLOR_MODE_MULTICHANNEL:
+			case PSD_COLOR_MODE_DUOTONE:
+				return 1;
+		}
+	}
+
+	return 0;
+}
+
+static SIZE_T psd_get_bytes_per_sample(const _viv_psd_t *psd)
+{
+	switch (psd->depth)
+	{
+		case 16:
+			return 2;
+	}
+
+	return 1;
+}
+
 static int psd_read_header(_viv_psd_t *psd)
 {
 	const BYTE *signature;
@@ -244,7 +285,12 @@ static int psd_read_header(_viv_psd_t *psd)
 		return 0;
 	}
 	
-	if (psd->depth != 8)
+	if ((psd->depth != 8) && (psd->depth != 16))
+	{
+		return 0;
+	}
+
+	if (!psd_is_supported_depth_color_mode(psd->depth,psd->color_mode))
 	{
 		return 0;
 	}
@@ -438,6 +484,7 @@ static int psd_get_plane_data_size(const _viv_psd_t *psd,SIZE_T *out_size)
 {
 	SIZE_T pixel_count;
 	SIZE_T plane_data_size;
+	SIZE_T bytes_per_sample;
 	
 	if (!psd_get_pixel_count(psd,&pixel_count))
 	{
@@ -449,8 +496,44 @@ static int psd_get_plane_data_size(const _viv_psd_t *psd,SIZE_T *out_size)
 	{
 		return 0;
 	}
+
+	bytes_per_sample = psd_get_bytes_per_sample(psd);
+
+	plane_data_size = safe_size_mul(plane_data_size,bytes_per_sample);
+	if (plane_data_size == SIZE_MAX)
+	{
+		return 0;
+	}
 	
 	*out_size = plane_data_size;
+	return 1;
+}
+
+static int psd_get_channel_row_size(const _viv_psd_t *psd,SIZE_T *out_size)
+{
+	SIZE_T row_size;
+
+	row_size = safe_size_mul(psd->width,psd_get_bytes_per_sample(psd));
+	if (row_size == SIZE_MAX)
+	{
+		return 0;
+	}
+
+	*out_size = row_size;
+	return 1;
+}
+
+static int psd_get_channel_plane_size(const _viv_psd_t *psd,SIZE_T pixel_count,SIZE_T *out_size)
+{
+	SIZE_T channel_plane_size;
+
+	channel_plane_size = safe_size_mul(pixel_count,psd_get_bytes_per_sample(psd));
+	if (channel_plane_size == SIZE_MAX)
+	{
+		return 0;
+	}
+
+	*out_size = channel_plane_size;
 	return 1;
 }
 
@@ -531,11 +614,23 @@ static int psd_read_rle_image_data(_viv_psd_t *psd,BYTE *plane_data,SIZE_T plane
 	const BYTE *counts_data;
 	SIZE_T pixel_count;
 	SIZE_T counts_size;
+	SIZE_T channel_row_size;
+	SIZE_T channel_plane_size;
 	DWORD channel_index;
 	DWORD y;
 	SIZE_T count_index;
 	
 	if (!psd_get_pixel_count(psd,&pixel_count))
+	{
+		return 0;
+	}
+
+	if (!psd_get_channel_row_size(psd,&channel_row_size))
+	{
+		return 0;
+	}
+
+	if (!psd_get_channel_plane_size(psd,pixel_count,&channel_plane_size))
 	{
 		return 0;
 	}
@@ -579,20 +674,22 @@ static int psd_read_rle_image_data(_viv_psd_t *psd,BYTE *plane_data,SIZE_T plane
 				return 0;
 			}
 			
-			dst_row = plane_data + (pixel_count * channel_index) + ((SIZE_T)y * psd->width);
-			if (!psd_decode_packbits_row(row_data,row_size,dst_row,psd->width))
+			dst_row = plane_data + (channel_plane_size * channel_index) + ((SIZE_T)y * channel_row_size);
+			if (!psd_decode_packbits_row(row_data,row_size,dst_row,(DWORD)channel_row_size))
 			{
 				return 0;
 			}
 		}
 	}
 	
-	return plane_data_size == pixel_count * psd->channels;
+	return plane_data_size == channel_plane_size * psd->channels;
 }
 
 static int psd_apply_zip_prediction(const _viv_psd_t *psd,BYTE *plane_data,SIZE_T plane_data_size)
 {
 	SIZE_T pixel_count;
+	SIZE_T channel_plane_size;
+	SIZE_T channel_row_size;
 	DWORD channel_index;
 	DWORD y;
 	
@@ -600,8 +697,18 @@ static int psd_apply_zip_prediction(const _viv_psd_t *psd,BYTE *plane_data,SIZE_
 	{
 		return 0;
 	}
+
+	if (!psd_get_channel_plane_size(psd,pixel_count,&channel_plane_size))
+	{
+		return 0;
+	}
+
+	if (!psd_get_channel_row_size(psd,&channel_row_size))
+	{
+		return 0;
+	}
 	
-	if (plane_data_size != pixel_count * psd->channels)
+	if (plane_data_size != channel_plane_size * psd->channels)
 	{
 		return 0;
 	}
@@ -613,10 +720,28 @@ static int psd_apply_zip_prediction(const _viv_psd_t *psd,BYTE *plane_data,SIZE_
 			BYTE *row;
 			DWORD x;
 			
-			row = plane_data + (pixel_count * channel_index) + ((SIZE_T)y * psd->width);
-			for(x=1;x<psd->width;x++)
+			row = plane_data + (channel_plane_size * channel_index) + ((SIZE_T)y * channel_row_size);
+			if (psd->depth == 16)
 			{
-				row[x] = (BYTE)(row[x] + row[x - 1]);
+				for(x=1;x<psd->width;x++)
+				{
+					WORD value;
+					WORD previous_value;
+					WORD decoded_value;
+
+					value = psd_read_sample_u16_be(row + ((SIZE_T)x * 2));
+					previous_value = psd_read_sample_u16_be(row + ((SIZE_T)(x - 1) * 2));
+					decoded_value = (WORD)(value + previous_value);
+					row[(SIZE_T)x * 2] = (BYTE)(decoded_value >> 8);
+					row[((SIZE_T)x * 2) + 1] = (BYTE)decoded_value;
+				}
+			}
+			else
+			{
+				for(x=1;x<psd->width;x++)
+				{
+					row[x] = (BYTE)(row[x] + row[x - 1]);
+				}
 			}
 		}
 	}
@@ -688,6 +813,37 @@ static int psd_get_alpha_plane_index(const _viv_psd_t *psd)
 	return -1;
 }
 
+static WORD psd_read_sample_u16_be(const BYTE *sample_data)
+{
+	return ((WORD)sample_data[0] << 8) | sample_data[1];
+}
+
+static BYTE psd_scale_u16_to_u8(WORD value)
+{
+	return (BYTE)((value + 128) / 257);
+}
+
+static BYTE psd_get_channel_sample_u8(const _viv_psd_t *psd,const BYTE *plane_data,SIZE_T pixel_count,DWORD channel_index,SIZE_T pixel_index)
+{
+	SIZE_T bytes_per_sample;
+	SIZE_T channel_plane_size;
+	const BYTE *sample_data;
+
+	bytes_per_sample = psd_get_bytes_per_sample(psd);
+	if (!psd_get_channel_plane_size(psd,pixel_count,&channel_plane_size))
+	{
+		return 0;
+	}
+
+	sample_data = plane_data + (channel_plane_size * channel_index) + (pixel_index * bytes_per_sample);
+	if (psd->depth == 16)
+	{
+		return psd_scale_u16_to_u8(psd_read_sample_u16_be(sample_data));
+	}
+
+	return sample_data[0];
+}
+
 static BYTE psd_get_alpha_value(const _viv_psd_t *psd,const BYTE *plane_data,SIZE_T pixel_count,SIZE_T pixel_index)
 {
 	int alpha_plane_index;
@@ -695,7 +851,7 @@ static BYTE psd_get_alpha_value(const _viv_psd_t *psd,const BYTE *plane_data,SIZ
 	alpha_plane_index = psd_get_alpha_plane_index(psd);
 	if (alpha_plane_index >= 0)
 	{
-		return plane_data[(pixel_count * alpha_plane_index) + pixel_index];
+		return psd_get_channel_sample_u8(psd,plane_data,pixel_count,(DWORD)alpha_plane_index,pixel_index);
 	}
 	
 	return 255;
@@ -859,7 +1015,7 @@ static int psd_normalize_to_rgba8(const _viv_psd_t *psd,const BYTE *plane_data,B
 		{
 			case PSD_COLOR_MODE_GRAYSCALE:
 			case PSD_COLOR_MODE_DUOTONE:
-				red = plane_data[pixel_index];
+				red = psd_get_channel_sample_u8(psd,plane_data,pixel_count,0,pixel_index);
 				green = red;
 				blue = red;
 				break;
@@ -868,6 +1024,11 @@ static int psd_normalize_to_rgba8(const _viv_psd_t *psd,const BYTE *plane_data,B
 				{
 					BYTE index;
 					
+					if (psd->depth != 8)
+					{
+						return 0;
+					}
+
 					index = plane_data[pixel_index];
 					red = psd->palette[index];
 					green = psd->palette[256 + index];
@@ -881,9 +1042,9 @@ static int psd_normalize_to_rgba8(const _viv_psd_t *psd,const BYTE *plane_data,B
 				break;
 				
 			case PSD_COLOR_MODE_RGB:
-				red = plane_data[pixel_index];
-				green = plane_data[pixel_count + pixel_index];
-				blue = plane_data[(pixel_count * 2) + pixel_index];
+				red = psd_get_channel_sample_u8(psd,plane_data,pixel_count,0,pixel_index);
+				green = psd_get_channel_sample_u8(psd,plane_data,pixel_count,1,pixel_index);
+				blue = psd_get_channel_sample_u8(psd,plane_data,pixel_count,2,pixel_index);
 				break;
 				
 			case PSD_COLOR_MODE_CMYK:
@@ -893,16 +1054,16 @@ static int psd_normalize_to_rgba8(const _viv_psd_t *psd,const BYTE *plane_data,B
 					int yellow;
 					int black;
 					
-					cyan = 255 - plane_data[pixel_index];
-					magenta = 255 - plane_data[pixel_count + pixel_index];
-					yellow = 255 - plane_data[(pixel_count * 2) + pixel_index];
-					black = 255 - plane_data[(pixel_count * 3) + pixel_index];
+					cyan = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,0,pixel_index);
+					magenta = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,1,pixel_index);
+					yellow = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,2,pixel_index);
+					black = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,3,pixel_index);
 					psd_cmyk_to_rgb(cyan,magenta,yellow,black,&red,&green,&blue);
 				}
 				break;
 				
 			case PSD_COLOR_MODE_LAB:
-				psd_lab_to_rgb((plane_data[pixel_index] * 100) / 255,plane_data[pixel_count + pixel_index] - 128,plane_data[(pixel_count * 2) + pixel_index] - 128,&red,&green,&blue);
+				psd_lab_to_rgb((psd_get_channel_sample_u8(psd,plane_data,pixel_count,0,pixel_index) * 100) / 255,psd_get_channel_sample_u8(psd,plane_data,pixel_count,1,pixel_index) - 128,psd_get_channel_sample_u8(psd,plane_data,pixel_count,2,pixel_index) - 128,&red,&green,&blue);
 				break;
 				
 			case PSD_COLOR_MODE_MULTICHANNEL:
@@ -912,14 +1073,14 @@ static int psd_normalize_to_rgba8(const _viv_psd_t *psd,const BYTE *plane_data,B
 					int yellow;
 					int black;
 					
-					cyan = 255 - plane_data[pixel_index];
-					magenta = 255 - plane_data[pixel_count + pixel_index];
-					yellow = 255 - plane_data[(pixel_count * 2) + pixel_index];
+					cyan = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,0,pixel_index);
+					magenta = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,1,pixel_index);
+					yellow = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,2,pixel_index);
 					black = 0;
 					
 					if (psd->color_channels >= 4)
 					{
-						black = 255 - plane_data[(pixel_count * 3) + pixel_index];
+						black = 255 - psd_get_channel_sample_u8(psd,plane_data,pixel_count,3,pixel_index);
 					}
 					
 					psd_cmyk_to_rgb(cyan,magenta,yellow,black,&red,&green,&blue);

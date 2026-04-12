@@ -112,7 +112,7 @@
 
 - 扩展名：`.psd`
 - 版本：标准 PSD，不含 `.psb`
-- 位深：`8-bit`
+- 位深：`8-bit`，以及一部分可安全降采样显示的 `16-bit` 合成图
 - 颜色模式：`Grayscale / Indexed / RGB / CMYK / Multichannel / Duotone / Lab`
 - 压缩：`Raw / RLE / ZIP / ZIP with prediction`
 - 输出：最终合成图
@@ -121,7 +121,8 @@
 
 - `PSB`
 - `Bitmap` 1-bit
-- `16-bit` / `32-bit`
+- `32-bit`
+- 当前未接入颜色语义的 `16-bit Indexed / Lab`
 - 图层逐层重建
 - 文字层、智能对象、调整图层等 Photoshop 语义
 
@@ -607,7 +608,7 @@ channel_bytes = width * height
 11. `zip-predict-8bit.psd`
    预期：prediction 还原正确
 12. `rgb-16bit.psd`
-   预期：明确失败
+   预期：在当前支持子集内时可降采样显示；不在支持子集内时明确失败
 13. `very-large-rgb.psd`
    预期：要么正常显示，要么因超限安全失败
 
