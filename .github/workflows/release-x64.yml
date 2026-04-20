@@ -20,25 +20,19 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Install NSIS
+      - name: Package x64 portable release artifact
         shell: pwsh
-        run: choco install nsis -y
-
-      - name: Package x64 release artifacts
-        shell: pwsh
-        run: .\_dev\publish-release.ps1 -Action PackageAll -NoVersionBump -NoPause
+        run: .\_dev\publish-release.ps1 -Action PackagePortable -NoVersionBump -NoPause
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: voidImageViewer-x64-release
-          path: _dev/artifacts/*
+          name: voidImageViewer-x64-portable-release
+          path: _dev/artifacts/*/*.zip
           if-no-files-found: error
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            _dev/artifacts/*/*.zip
-            _dev/artifacts/*/*.exe
+          files: _dev/artifacts/*/*.zip

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Menu","Build","PackagePortable","PackageInstallerChinese","PackageInstallerEnglish","PackageAll")]
+    [ValidateSet("Menu","Build","PackagePortable")]
     [string]$Action = "Menu",
     [string]$Arch = "x64",
     [string]$Configuration = "Release",
@@ -56,17 +56,6 @@ function Find-MSBuild {
     }
 
     throw "MSBuild.exe not found. Please install Visual Studio 2022 Build Tools or Visual Studio 2022."
-}
-
-function Assert-BuildTools {
-    [void](Find-MSBuild)
-}
-
-function Assert-NsisInstalled {
-    $command = Get-Command makensis.exe -ErrorAction SilentlyContinue
-    if (-not $command) {
-        throw "makensis.exe not found. Please install NSIS and add it to PATH."
-    }
 }
 
 function Build-ReleaseBinary {
@@ -137,69 +126,11 @@ function New-PortableZip {
     Write-Host "Portable zip created: $zipPath" -ForegroundColor Green
 }
 
-function Get-InstallerFileName {
-    param(
-        [string]$Version,
-        [string]$Lang
-    )
-
-    $langCode = if ($Lang -eq "Chinese") { "zh-CN" } else { "en-US" }
-    return "voidImageViewer-$Version.$Arch.$langCode-Setup.exe"
-}
-
-function New-Installer {
-    param(
-        [string]$Version,
-        [string]$Lang,
-        [string]$ArtifactRoot
-    )
-
-    Write-Step "Building NSIS installer ($Lang)"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "nsis/build_installer.ps1") -Arch $Arch -VsVersion $VsVersion -BuildConfig $Configuration -Lang $Lang
-    if ($LASTEXITCODE -ne 0) {
-        throw "NSIS installer build failed for $Lang"
-    }
-
-    $fileName = Get-InstallerFileName -Version $Version -Lang $Lang
-    $sourcePath = Join-Path $RepoRoot "nsis/$fileName"
-    $targetPath = Join-Path $ArtifactRoot $fileName
-
-    if (-not (Test-Path $sourcePath)) {
-        throw "Installer not found after build: $sourcePath"
-    }
-
-    Copy-Item $sourcePath -Destination $targetPath -Force
-    Write-Host "Installer created: $targetPath" -ForegroundColor Green
-}
-
 function Invoke-PackagePortable {
-    Assert-BuildTools
     $version = Update-VersionForPackaging
     Build-ReleaseBinary
     $artifactRoot = Get-ArtifactRoot -Version $version
     New-PortableZip -Version $version -ArtifactRoot $artifactRoot
-}
-
-function Invoke-PackageInstaller {
-    param([string]$Lang)
-
-    Assert-BuildTools
-    Assert-NsisInstalled
-    $version = Update-VersionForPackaging
-    Build-ReleaseBinary
-    $artifactRoot = Get-ArtifactRoot -Version $version
-    New-Installer -Version $version -Lang $Lang -ArtifactRoot $artifactRoot
-}
-
-function Invoke-PackageAll {
-    Assert-BuildTools
-    Assert-NsisInstalled
-    $version = Update-VersionForPackaging
-    Build-ReleaseBinary
-    $artifactRoot = Get-ArtifactRoot -Version $version
-    New-PortableZip -Version $version -ArtifactRoot $artifactRoot
-    New-Installer -Version $version -Lang "Chinese" -ArtifactRoot $artifactRoot
-    New-Installer -Version $version -Lang "English" -ArtifactRoot $artifactRoot
 }
 
 function Show-Menu {
@@ -207,8 +138,7 @@ function Show-Menu {
     Write-Host "voidImageViewer publish release menu" -ForegroundColor Cyan
     Write-Host "1. Build x64 Release only (safe check, no version bump)"
     Write-Host "2. Package x64 portable zip (for testing/share, auto build+1)"
-    Write-Host "3. Package full x64 release (portable + CN/EN installers, auto build+1)"
-    Write-Host "4. Show current version"
+    Write-Host "3. Show current version"
     Write-Host "0. Exit"
     Write-Host ""
 }
@@ -228,15 +158,6 @@ try {
         "PackagePortable" {
             Invoke-PackagePortable
         }
-        "PackageInstallerChinese" {
-            Invoke-PackageInstaller -Lang "Chinese"
-        }
-        "PackageInstallerEnglish" {
-            Invoke-PackageInstaller -Lang "English"
-        }
-        "PackageAll" {
-            Invoke-PackageAll
-        }
         default {
             while ($true) {
                 Show-Menu
@@ -251,10 +172,6 @@ try {
                         return
                     }
                     "3" {
-                        Invoke-PackageAll
-                        return
-                    }
-                    "4" {
                         Write-Host "Current version: $(Get-Version)" -ForegroundColor Green
                     }
                     "0" {
